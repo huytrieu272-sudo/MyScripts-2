@@ -435,9 +435,9 @@ Players.PlayerAdded:Connect(function(p) if p ~= LocalPlayer then DrawLuxuryESP(p
 local function LaunchMainMenu(expiry_time)
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
-        Name = "⚡ GOD HUB V9.0 ULTRA RAGE ⚡",
-        LoadingTitle = "Đang áp dụng cấu hình tối ưu đồ họa...",
-        LoadingSubtitle = "by Hacker Pro",
+        Name = "Menu Hack Trung Kien V2",
+        LoadingTitle = "Đang cập nhật menu...",
+        LoadingSubtitle = "by: Nguyen Hoang Trung Kien",
         ConfigurationSaving = { Enabled = false }
     })
 
@@ -695,7 +695,7 @@ local function LaunchMainMenu(expiry_time)
     })
 
     SettingTab:CreateButton({
-        Name = "Xóa Session Key Đã Lưu",
+        Name = "Xóa Key Đã Lưu",
         Callback = function() if delfile then delfile(KEY_FILE) end end,
     })
 end
@@ -740,7 +740,7 @@ else
 
     local Title = Instance.new("TextLabel", MainFrame)
     Title.Size = UDim2.new(1, 0, 0, 50)
-    Title.Text = "HỆ THỐNG KEY ĐỒNG BỘ V9.0"
+    Title.Text = "🔑 Hệ Thống Nhập Key 🔑"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
     Title.TextSize = 16
     Title.Font = Enum.Font.SourceSansBold
@@ -751,7 +751,7 @@ else
     TextBox.Position = UDim2.new(0.5, -150, 0.4, -10)
     TextBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     TextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    TextBox.PlaceholderText = "Nhập Key: RAYFIELD-XYZ-2026"
+    TextBox.PlaceholderText = "Nhập Key"
     TextBox.Text = ""
     Instance.new("UICorner", TextBox)
 
@@ -759,7 +759,7 @@ else
     SubmitBtn.Size = UDim2.new(0, 150, 0, 40)
     SubmitBtn.Position = UDim2.new(0.5, -75, 0.7, 10)
     SubmitBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    SubmitBtn.Text = "KÍCH HOẠT SCRIPT"
+    SubmitBtn.Text = "KÍCH HOẠT KEY"
     SubmitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     SubmitBtn.Font = Enum.Font.SourceSansBold
     Instance.new("UICorner", SubmitBtn)
