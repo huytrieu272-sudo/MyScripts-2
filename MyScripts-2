@@ -401,7 +401,7 @@ local function LaunchMainMenu(initial_remaining_seconds)
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
         Name = "TRUNG KIEN HUB 🔥",
-        LoadingTitle = "loading......",
+        LoadingTitle = "loading.....",
         LoadingSubtitle = "Made By TrungKien",
         ConfigurationSaving = { Enabled = false }
     })
