@@ -594,7 +594,7 @@ else
     GetKeyBtn.Size = UDim2.new(0, 300, 0, 40); GetKeyBtn.Position = UDim2.new(0.5, -150, 0.78, 10); GetKeyBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255); GetKeyBtn.Text = "GET KEY"; GetKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255); GetKeyBtn.Font = Enum.Font.SourceSansBold; Instance.new("UICorner", GetKeyBtn)
 
     GetKeyBtn.MouseButton1Click:Connect(function()
-        local url = "https://fnote.me/edit/29sXyN?t=true"
+        local url = "https://fnote.net/notes/aLq6tA=true"
         if setclipboard then setclipboard(url); GetKeyBtn.Text = "ĐÃ COPY LINK VÀO CLIPBOARD!"; task.wait(2); GetKeyBtn.Text = "GET KEY" end
         if request then pcall(function() request({Url = url, Method = "GET"}) end) end
     end)
