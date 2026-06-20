@@ -400,9 +400,9 @@ setreadonly(mt, true)
 local function LaunchMainMenu(initial_remaining_seconds)
     local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     local Window = Rayfield:CreateWindow({
-        Name = "⚡ GOD HUB V10.5 CHROMA FIXED ⚡",
-        LoadingTitle = "Đang đồng bộ thuật toán đổi màu...",
-        LoadingSubtitle = "by Hacker Pro",
+        Name = "TRUNG KIEN HUB 🔥",
+        LoadingTitle = "loading......",
+        LoadingSubtitle = "Made By TrungKien",
         ConfigurationSaving = { Enabled = false }
     })
 
@@ -717,19 +717,19 @@ else
     Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
 
     local Title = Instance.new("TextLabel", MainFrame)
-    Title.Size = UDim2.new(1, 0, 0, 50); Title.Text = "HỆ THỐNG XÁC THỰC 10 KEY HỆ THỐNG"; Title.TextColor3 = Color3.fromRGB(255, 255, 255); Title.TextSize = 15; Title.Font = Enum.Font.SourceSansBold; Title.BackgroundTransparency = 1
+    Title.Size = UDim2.new(1, 0, 0, 50); Title.Text = "HỆ THỐNG NHẬP KEY 🔑"; Title.TextColor3 = Color3.fromRGB(255, 255, 255); Title.TextSize = 15; Title.Font = Enum.Font.SourceSansBold; Title.BackgroundTransparency = 1
 
     local TextBox = Instance.new("TextBox", MainFrame)
-    TextBox.Size = UDim2.new(0, 300, 0, 40); TextBox.Position = UDim2.new(0.5, -150, 0.35, -10); TextBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30); TextBox.TextColor3 = Color3.fromRGB(255, 255, 255); TextBox.PlaceholderText = "Nhập mã key hệ thống cấp của bạn..."; TextBox.Text = ""; Instance.new("UICorner", TextBox)
+    TextBox.Size = UDim2.new(0, 300, 0, 40); TextBox.Position = UDim2.new(0.5, -150, 0.35, -10); TextBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30); TextBox.TextColor3 = Color3.fromRGB(255, 255, 255); TextBox.PlaceholderText = "Nhập Key"; TextBox.Text = ""; Instance.new("UICorner", TextBox)
 
     local SubmitBtn = Instance.new("TextButton", MainFrame)
-    SubmitBtn.Size = UDim2.new(0, 300, 0, 40); SubmitBtn.Position = UDim2.new(0.5, -150, 0.58, 10); SubmitBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0); SubmitBtn.Text = "KÍCH HOẠT SCRIPT"; SubmitBtn.TextColor3 = Color3.fromRGB(255, 255, 255); SubmitBtn.Font = Enum.Font.SourceSansBold; Instance.new("UICorner", SubmitBtn)
+    SubmitBtn.Size = UDim2.new(0, 300, 0, 40); SubmitBtn.Position = UDim2.new(0.5, -150, 0.58, 10); SubmitBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0); SubmitBtn.Text = "KÍCH HOẠT KEY 🔑"; SubmitBtn.TextColor3 = Color3.fromRGB(255, 255, 255); SubmitBtn.Font = Enum.Font.SourceSansBold; Instance.new("UICorner", SubmitBtn)
 
     local GetKeyBtn = Instance.new("TextButton", MainFrame)
     GetKeyBtn.Size = UDim2.new(0, 300, 0, 40); GetKeyBtn.Position = UDim2.new(0.5, -150, 0.78, 10); GetKeyBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255); GetKeyBtn.Text = "GET KEY"; GetKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255); GetKeyBtn.Font = Enum.Font.SourceSansBold; Instance.new("UICorner", GetKeyBtn)
 
     GetKeyBtn.MouseButton1Click:Connect(function()
-        local url = "https://fnote.me/edit/29sXyN?t=true"
+        local url = "https://fnote.net/notes/aLq6tA?t=true"
         if setclipboard then setclipboard(url); GetKeyBtn.Text = "ĐÃ COPY LINK VÀO CLIPBOARD!"; task.wait(2); GetKeyBtn.Text = "GET KEY" end
         if request then pcall(function() request({Url = url, Method = "GET"}) end) end
     end)
@@ -766,7 +766,7 @@ else
             local Bar = Instance.new("Frame", BarBg); Bar.Size = UDim2.new(0, 0, 1, 0); Bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 
             for i = 1, 100 do
-                ProgressLabel.Text = "Đang đồng bộ cấu hình màu sắc... " .. i .. "%"
+                ProgressLabel.Text = "Đang Cập Nhật Menu... " .. i .. "%"
                 Bar.Size = UDim2.new(i/100, 0, 1, 0); task.wait(0.01)
             end
 
@@ -774,7 +774,7 @@ else
             ScreenGui:Destroy()
             LaunchMainMenu(get_key_remaining_time())
         else
-            Title.Text = "SAI KEY! MÃ KHÔNG TỒN TẠI"
+            Title.Text = "SAI KEY! HOẶC KEY KHÔNG TỒN TẠI"
             Title.TextColor3 = Color3.fromRGB(255, 0, 0)
         end
     end)
