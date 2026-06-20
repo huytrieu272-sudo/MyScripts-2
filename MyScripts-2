@@ -1,1 +1,782 @@
+-- =============================================================================
+-- [1. HỆ THỐNG CẤU HÌNH 10 KEY OFFLINE - KHÓA HWID & ĐÓNG BĂNG THỜI GIAN]
+-- =============================================================================
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local KEY_FILE = "SuperHub_Key_Session.txt"
+local DB_FILE = "SuperHub_Local_Database.txt"
+
+local function getHWID()
+    if gethwid then return gethwid() end
+    if syn and syn.queue_on_teleport then return "SYN-"..LocalPlayer.UserId end
+    return tostring(LocalPlayer.UserId)
+end
+
+local LocalDatabase = {
+    ["RAYFIELD-KEY-01"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-02"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-03"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-04"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-05"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-06"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-07"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-08"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-09"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
+    ["RAYFIELD-KEY-10"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false }
+}
+
+local CurrentActiveKey = ""
+
+local function load_global_db()
+    if isfile and isfile(DB_FILE) then
+        local success, content = pcall(readfile, DB_FILE)
+        if success and content then
+            local data = HttpService:JSONDecode(content)
+            for k, v in pairs(data) do
+                if LocalDatabase[k] then LocalDatabase[k] = v end
+            end
+        end
+    end
+end
+
+local function save_global_db()
+    if writefile then pcall(writefile, DB_FILE, HttpService:JSONEncode(LocalDatabase)) end
+end
+
+load_global_db()
+
+local function get_key_remaining_time()
+    local keyData = LocalDatabase[CurrentActiveKey]
+    if not keyData then return 0 end
+    if keyData.isFrozen then return keyData.duration end
+    local remaining = keyData.expires - os.time()
+    return math.max(0, remaining)
+end
+
+-- =============================================================================
+-- [2. HỆ THỐNG BIẾN TOÀN CỤC CHỐNG ANTI-CHEAT & BIẾN MỚI]
+-- =============================================================================
+local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+
+_G.Features = {
+    Aimbot = false, AimbotTargetPart = "Head", AimbotUseFOV = true, AimbotFOVRadius = 150, AimbotTeamCheck = false, AimbotWallCheck = true,     
+    Hitbox = false, HitboxSize = 25, ESP_2DBox = false, ESP_Line = false, ESP_Name = false, ESP_Health = false,  
+    AutoClick = false, AntiAFK = false, AutoAttack = false, Fly = false, FlySpeed = 50, WalkSpeed = 16, JumpPower = 50,
+    Fling = false, FlingPower = 10000, AntiLag = false, RGBTheme = false, SelectedThemeColor = Color3.fromRGB(0, 255, 230), AntiBan = false, FPSCounter = false,
+    
+    -- Các biến mới được thêm theo yêu cầu của bạn
+    AutoEquip = false, SelectedWeapon = "",
+    InfiniteJump = false, Noclip = false,
+    SpinBot = false, SpinSpeed = 50,
+    HitboxColor = Color3.fromRGB(255, 0, 0), HitboxTransparency = 0.85
+}
+
+local OriginalGraphics = {}
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 1.5; FOVCircle.Color = Color3.fromRGB(255, 0, 0); FOVCircle.Transparency = 0.8; FOVCircle.Filled = false; FOVCircle.Visible = false
+
+local IsAiming = false; local CurrentTargetPlayer = nil 
+UserInputService.InputBegan:Connect(function(input, processed) if not processed and input.UserInputType == Enum.UserInputType.MouseButton2 then IsAiming = true end end)
+UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton2 then IsAiming = false; CurrentTargetPlayer = nil end end)
+
+local FPSLabel = Drawing.new("Text")
+FPSLabel.Size = 18; FPSLabel.Font = 2; FPSLabel.Outline = true; FPSLabel.Color = Color3.fromRGB(0, 255, 0); FPSLabel.Position = Vector2.new(10, 10); FPSLabel.Visible = false
+
+local FrameLog = {}
+RunService.RenderStepped:Connect(function()
+    if _G.Features.FPSCounter then
+        local Now = os.clock(); table.insert(FrameLog, Now)
+        while FrameLog[1] and FrameLog[1] < Now - 1 do table.remove(FrameLog, 1) end
+        FPSLabel.Text = "FPS: " .. #FrameLog; FPSLabel.Visible = true
+    else FPSLabel.Visible = false end
+end)
+
+-- =============================================================================
+-- [3. VÒNG LẶP XỬ LÝ LOGIC MỚI (AUTO EQUIP, INF JUMP, NOCLIP, SPIN)]
+-- =============================================================================
+
+-- Logic Auto Equip Vũ Khí
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G.Features.AutoEquip and _G.Features.SelectedWeapon ~= "" then
+            pcall(function()
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                local char = LocalPlayer.Character
+                if backpack and char then
+                    local tool = backpack:FindFirstChild(_G.Features.SelectedWeapon)
+                    -- Nếu vũ khí đang ở trong balo và chưa được cầm trên tay thì tự động cầm
+                    if tool and not char:FindFirstChild(_G.Features.SelectedWeapon) then
+                        char:FindFirstChildWhichIsA("Humanoid"):EquipTool(tool)
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Logic Infinite Jump
+UserInputService.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.Space then
+        if _G.Features.InfiniteJump then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if char and char:FindFirstChildWhichIsA("Humanoid") then
+                    char:FindFirstChildWhichIsA("Humanoid"):ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end)
+        end
+    end
+end)
+
+-- Logic Noclip (Đi xuyên tường)
+RunService.Stepped:Connect(function()
+    if _G.Features.Noclip then
+        pcall(function()
+            if LocalPlayer.Character then
+                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- Logic Spin Bot (Xoay nhân vật)
+RunService.Heartbeat:Connect(function()
+    if _G.Features.SpinBot then
+        pcall(function()
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(_G.Features.SpinSpeed), 0)
+            end
+        end)
+    end
+end)
+
+-- =============================================================================
+-- [4. CORE LOGIC: AIMBOT SIÊU DÍNH TUYỆT ĐỐI 100%]
+-- =============================================================================
+local function IsPlayerVisible(TargetPart)
+    if not _G.Features.AimbotWallCheck then return true end
+    local Character = LocalPlayer.Character; if not Character then return false end
+    local RaycastParamsArgs = RaycastParams.new()
+    RaycastParamsArgs.FilterType = Enum.RaycastFilterType.Exclude
+    RaycastParamsArgs.FilterDescendantsInstances = {Character, TargetPart.Parent}; RaycastParamsArgs.IgnoreWater = true
+    local RaycastResult = workspace:Raycast(Camera.CFrame.Position, TargetPart.Position - Camera.CFrame.Position, RaycastParamsArgs)
+    return RaycastResult == nil
+end
+
+local function IsValidTarget(PlayerInstance)
+    if not PlayerInstance or not PlayerInstance.Parent or not PlayerInstance.Character then return false end
+    if _G.Features.AimbotTeamCheck and PlayerInstance.Team == LocalPlayer.Team then return false end
+    local Hum = PlayerInstance.Character:FindFirstChildWhichIsA("Humanoid")
+    local TargetPart = PlayerInstance.Character:FindFirstChild(_G.Features.AimbotTargetPart) or PlayerInstance.Character:FindFirstChild("HumanoidRootPart")
+    if TargetPart and Hum and Hum.Health > 0 then return true, TargetPart end
+    return false, nil
+end
+
+local function FindNewTarget()
+    local BestTargetPlayer = nil; local BestTargetPart = nil
+    local MaxDistance = _G.Features.AimbotUseFOV and _G.Features.AimbotFOVRadius or math.huge
+    local CenterScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2) 
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character then
+            if _G.Features.AimbotTeamCheck and v.Team == LocalPlayer.Team then continue end
+            local Hum = v.Character:FindFirstChildWhichIsA("Humanoid")
+            local TargetPart = v.Character:FindFirstChild(_G.Features.AimbotTargetPart) or v.Character:FindFirstChild("HumanoidRootPart")
+            if TargetPart and Hum and Hum.Health > 0 then
+                local ScreenPoint, OnScreen = Camera:WorldToViewportPoint(TargetPart.Position)
+                if OnScreen then
+                    local ScreenPos = Vector2.new(ScreenPoint.X, ScreenPoint.Y)
+                    local DistanceToCenter = (CenterScreen - ScreenPos).Magnitude
+                    if DistanceToCenter < MaxDistance and IsPlayerVisible(TargetPart) then
+                        MaxDistance = DistanceToCenter; BestTargetPlayer = v; BestTargetPart = TargetPart
+                    end
+                end
+            end
+        end
+    end
+    return BestTargetPlayer, BestTargetPart
+end
+
+RunService.RenderStepped:Connect(function()
+    if _G.Features.Aimbot and _G.Features.AimbotUseFOV then
+        FOVCircle.Radius = _G.Features.AimbotFOVRadius; FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2); FOVCircle.Visible = true
+    else FOVCircle.Visible = false end
+    if _G.Features.Aimbot and IsAiming then
+        local IsValid, TargetPart = IsValidTarget(CurrentTargetPlayer)
+        if not IsValid or not TargetPart then CurrentTargetPlayer, TargetPart = FindNewTarget() end
+        if TargetPart then Camera.CFrame = CFrame.new(Camera.CFrame.Position, TargetPart.Position) end
+    else CurrentTargetPlayer = nil end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if _G.Features.AutoClick then
+        pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton1(Vector2.new(0, 0)) end)
+    end
+end)
+
+LocalPlayer.Idled:Connect(function()
+    if _G.Features.AntiAFK then
+        pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new(0, 0)) end)
+    end
+end)
+
+-- =============================================================================
+-- [5. HỆ THỐNG QUẢN LÝ TÍNH NĂNG CON (HITBOX ĐÃ CẬP NHẬT MÀU & TRANSPARENCY)]
+-- =============================================================================
+task.spawn(function()
+    while task.wait(0.1) do
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChildWhichIsA("BasePart")
+                if root then
+                    if _G.Features.Hitbox then
+                        pcall(function()
+                            root.Size = Vector3.new(_G.Features.HitboxSize, _G.Features.HitboxSize, _G.Features.HitboxSize)
+                            root.Transparency = _G.Features.HitboxTransparency
+                            root.Color = _G.Features.HitboxColor
+                            root.Material = Enum.Material.SmoothPlastic; root.CanCollide = false
+                        end)
+                    else
+                        pcall(function() root.Size = Vector3.new(2, 2, 1); root.Transparency = 1 end)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if _G.Features.AutoAttack then
+            pcall(function()
+                VirtualUser:CaptureController(); VirtualUser:Button1Down(Vector2.new(0,0))
+                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
+                if tool then tool:Activate() end
+            end)
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            hum.WalkSpeed = _G.Features.WalkSpeed
+            if hum.UseJumpPower then hum.JumpPower = _G.Features.JumpPower else hum.JumpHeight = _G.Features.JumpPower / 7 end
+        end
+    end)
+end)
+
+local BodyGyro, BodyVelocity
+RunService.Heartbeat:Connect(function()
+    pcall(function()
+        if _G.Features.Fly and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character.HumanoidRootPart
+            if not hrp:FindFirstChild("FlyGyro") then
+                BodyGyro = Instance.new("BodyGyro", hrp); BodyGyro.Name = "FlyGyro"; BodyGyro.maxTorque = Vector3.new(9e9, 9e9, 9e9); BodyGyro.cframe = hrp.CFrame
+            end
+            if not hrp:FindFirstChild("FlyVelocity") then
+                BodyVelocity = Instance.new("BodyVelocity", hrp); BodyVelocity.Name = "FlyVelocity"; BodyVelocity.maxForce = Vector3.new(9e9, 9e9, 9e9); BodyVelocity.velocity = Vector3.new(0, 0.1, 0)
+            end
+            BodyGyro.cframe = Camera.CFrame
+            local moveDir = Vector3.new(0,0,0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+            BodyVelocity.velocity = moveDir.Unit * _G.Features.FlySpeed
+            if moveDir.Magnitude == 0 then BodyVelocity.velocity = Vector3.new(0, 0, 0) end
+        else
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = LocalPlayer.Character.HumanoidRootPart
+                if hrp:FindFirstChild("FlyGyro") then hrp.FlyGyro:Destroy() end
+                if hrp:FindFirstChild("FlyVelocity") then hrp.FlyVelocity:Destroy() end
+            end
+        end
+    end)
+end)
+
+RunService.Heartbeat:Connect(function()
+    if _G.Features.Fling then
+        pcall(function()
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = LocalPlayer.Character.HumanoidRootPart; local oldV = hrp.Velocity
+                hrp.Velocity = Vector3.new(0, _G.Features.FlingPower, 0) * (math.sin(tick() * 100) >= 0 and 1 or -1)
+                RunService.RenderStepped:Wait(); hrp.Velocity = oldV
+            end
+        end)
+    end
+end)
+
+-- =============================================================================
+-- [6. HỆ THỐNG ĐỊNH VỊ LUXURY ESP CAO CẤP]
+-- =============================================================================
+local function DrawLuxuryESP(player)
+    local Lines = {} for i = 1, 8 do Lines[i] = Drawing.new("Line"); Lines[i].Thickness = 1.5; Lines[i].Color = Color3.fromRGB(0, 255, 230); Lines[i].Visible = false end
+    local HealthBarBg = Drawing.new("Square"); HealthBarBg.Thickness = 1; HealthBarBg.Filled = true; HealthBarBg.Color = Color3.fromRGB(30, 30, 30); HealthBarBg.Visible = false
+    local HealthBar = Drawing.new("Square"); HealthBar.Thickness = 1; HealthBar.Filled = true; HealthBar.Visible = false
+    local Tracer = Drawing.new("Line"); Tracer.Thickness = 1; Tracer.Color = Color3.fromRGB(0, 255, 230); Tracer.Transparency = 0.7; Tracer.Visible = false
+    local NameTag = Drawing.new("Text"); NameTag.Size = 13; NameTag.Font = 2; NameTag.Outline = true; NameTag.Center = true; NameTag.Color = Color3.fromRGB(255, 255, 255); NameTag.Visible = false
+
+    local function Updater()
+        local connection
+        connection = RunService.RenderStepped:Connect(function()
+            if player.Character and player.Character:FindFirstChild("Head") then
+                local Head = player.Character.Head; local Hum = player.Character:FindFirstChildWhichIsA("Humanoid")
+                local Torso = player.Character:FindFirstChild("Torso") or player.Character:FindFirstChild("UpperTorso")
+                local RootPos, OnScreen = Camera:WorldToViewportPoint((Torso or Head).Position)
+                
+                if OnScreen and Hum then
+                    local HeadPos = Camera:WorldToViewportPoint(Head.Position + Vector3.new(0, 0.5, 0))
+                    local LegPos = Camera:WorldToViewportPoint((Torso or Head).Position - Vector3.new(0, 2.5, 0))
+                    local BoxHeight = math.abs(HeadPos.Y - LegPos.Y); local BoxWidth = BoxHeight / 1.5
+                    local X = RootPos.X - BoxWidth / 2; local Y = HeadPos.Y 
+                    
+                    if _G.Features.ESP_2DBox then
+                        local LineLen = BoxWidth * 0.25
+                        Lines[1].From = Vector2.new(X, Y); Lines[1].To = Vector2.new(X + LineLen, Y)
+                        Lines[2].From = Vector2.new(X, Y); Lines[2].To = Vector2.new(X, Y + LineLen)
+                        Lines[3].From = Vector2.new(X + BoxWidth, Y); Lines[3].To = Vector2.new(X + BoxWidth - LineLen, Y)
+                        Lines[4].From = Vector2.new(X + BoxWidth, Y); Lines[4].To = Vector2.new(X + BoxWidth, Y + LineLen)
+                        Lines[5].From = Vector2.new(X, Y + BoxHeight); Lines[5].To = Vector2.new(X + LineLen, Y + BoxHeight)
+                        Lines[6].From = Vector2.new(X, Y + BoxHeight); Lines[6].To = Vector2.new(X, Y + BoxHeight - LineLen)
+                        Lines[7].From = Vector2.new(X + BoxWidth, Y + BoxHeight); Lines[7].To = Vector2.new(X + BoxWidth - LineLen, Y + BoxHeight)
+                        Lines[8].From = Vector2.new(X + BoxWidth, Y + BoxHeight); Lines[8].To = Vector2.new(X + BoxWidth, Y + BoxHeight - LineLen)
+                        for i = 1, 8 do Lines[i].Visible = true end
+                    else for i = 1, 8 do Lines[i].Visible = false end end
+
+                    if _G.Features.ESP_Health then
+                        local HealthPercent = math.clamp(Hum.Health / Hum.MaxHealth, 0, 1); local BarHeight = BoxHeight * HealthPercent; local BarX = X - 6
+                        HealthBarBg.Position = Vector2.new(BarX, Y); HealthBarBg.Size = Vector2.new(2.5, BoxHeight); HealthBarBg.Visible = true
+                        HealthBar.Position = Vector2.new(BarX, Y + (BoxHeight - BarHeight)); HealthBar.Size = Vector2.new(2.5, BarHeight); HealthBar.Color = Color3.fromHSV(HealthPercent * 0.3, 1, 1); HealthBar.Visible = true
+                    else HealthBarBg.Visible = false; HealthBar.Visible = false end
+
+                    if _G.Features.ESP_Name then
+                        NameTag.Text = string.format("%s [%dm]", player.Name, math.floor((Camera.CFrame.Position - (Torso or Head).Position).Magnitude))
+                        NameTag.Position = Vector2.new(RootPos.X, Y - 16); NameTag.Visible = true
+                    else NameTag.Visible = false end
+
+                    if _G.Features.ESP_Line then
+                        Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y); Tracer.To = Vector2.new(RootPos.X, RootPos.Y); Tracer.Visible = true
+                    else Tracer.Visible = false end
+                else for i = 1, 8 do Lines[i].Visible = false end; HealthBarBg.Visible = false; HealthBar.Visible = false; NameTag.Visible = false; Tracer.Visible = false end
+            else
+                for i = 1, 8 do Lines[i].Visible = false end; HealthBarBg.Visible = false; HealthBar.Visible = false; NameTag.Visible = false; Tracer.Visible = false
+                if not player or not player.Parent then
+                    for i = 1, 8 do Lines[i]:Destroy() end; HealthBarBg:Destroy(); HealthBar:Destroy(); NameTag:Destroy(); Tracer:Destroy(); connection:Disconnect()
+                end
+            end
+        end)
+    end
+    coroutine.wrap(Updater)()
+end
+for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then DrawLuxuryESP(p) end end
+Players.PlayerAdded:Connect(function(p) if p ~= LocalPlayer then DrawLuxuryESP(p) end end)
+
+local mt = getrawmetatable(game); local oldNamecall = mt.__namecall; setreadonly(mt, false)
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    if _G.Features.AntiBan and (method == "Kick" or method == "kick") then return nil end
+    return oldNamecall(self, ...)
+end)
+setreadonly(mt, true)
+
+-- =============================================================================
+-- [7. GIAO DIỆN CHÍNH RAYFIELD MENU]
+-- =============================================================================
+local function LaunchMainMenu(initial_remaining_seconds)
+    local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+    local Window = Rayfield:CreateWindow({
+        Name = "⚡ GOD HUB V10.5 CHROMA FIXED ⚡",
+        LoadingTitle = "Đang đồng bộ thuật toán đổi màu...",
+        LoadingSubtitle = "by Hacker Pro",
+        ConfigurationSaving = { Enabled = false }
+    })
+
+    -- TAB 1: MAIN
+    local MainTab = Window:CreateTab("Main", 4370345144)
+    local CountdownLabel = MainTab:CreateLabel("⏱️ Hạn Dùng Key: Đang tính toán...")
+    
+    task.spawn(function()
+        while true do
+            local remaining = get_key_remaining_time()
+            local keyData = LocalDatabase[CurrentActiveKey]
+            
+            if keyData and keyData.isFrozen then
+                CountdownLabel:Set("⏱️ Trạng thái: ĐỒNG HỒ ĐANG ĐÓNG BĂNG")
+            elseif remaining <= 0 then
+                CountdownLabel:Set("⏱️ Hạn Dùng Key: Hết hạn! KEY NÀY ĐÃ BỎ.")
+                if isfile and isfile(KEY_FILE) then pcall(delfile, KEY_FILE) end
+                task.wait(2)
+                game:Shutdown()
+                break
+            else
+                local hours = math.floor(remaining / 3600)
+                local minutes = math.floor((remaining % 3600) / 60)
+                local seconds = math.floor(remaining % 60)
+                CountdownLabel:Set(string.format("⏱️ Hạn Dùng Key: %02d Giờ %02d Phút %02d Giây", hours, minutes, seconds))
+            end
+            task.wait(1)
+        end
+    end)
+
+    -- [THÊM TÍNH NĂNG THEO YÊU CẦU: AUTO EQUIP & CHỌN VŨ KHÍ CÓ TRONG CƠ THỂ/BALO]
+    MainTab:CreateToggle({
+        Name = "⚔️ Bật Auto Equip Vũ Khí",
+        CurrentValue = false,
+        Callback = function(v) _G.Features.AutoEquip = v end
+    })
+
+    local WeaponDropdown = MainTab:CreateDropdown({
+        Name = "🎒 Chọn Vũ Khí (Chỉ đồ đang có)",
+        Options = {"Chưa có vũ khí nào"},
+        CurrentOption = "",
+        MultipleOptions = false,
+        Callback = function(v)
+            _G.Features.SelectedWeapon = v[1] or v
+        end
+    })
+
+    -- Khởi tạo vòng lặp tự quét các tool có trong Balo/Nhân vật để cập nhật vào dropdown danh sách
+    task.spawn(function()
+        while task.wait(1) do
+            pcall(function()
+                local rawList = {}
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                local char = LocalPlayer.Character
+                
+                if backpack then
+                    for _, item in ipairs(backpack:GetChildren()) do
+                        if item:IsA("Tool") and not table.find(rawList, item.Name) then
+                            table.insert(rawList, item.Name)
+                        end
+                    end
+                end
+                if char then
+                    for _, item in ipairs(char:GetChildren()) do
+                        if item:IsA("Tool") and not table.find(rawList, item.Name) then
+                            table.insert(rawList, item.Name)
+                        end
+                    end
+                end
+                
+                if #rawList == 0 then rawList = {"Chưa có vũ khí nào"} end
+                WeaponDropdown:Refresh(rawList)
+            end)
+        end
+    end)
+
+    MainTab:CreateToggle({ Name = "🛡️ Kích Hoạt Chống Khóa Tài Khoản (Anti-Ban Bypass)", CurrentValue = false, Callback = function(v) _G.Features.AntiBan = v end })
+    MainTab:CreateButton({
+        Name = "🔄 Chuyển Server Ngẫu Nhiên (Server Hop)",
+        Callback = function()
+            pcall(function()
+                local Http = game:GetService("HttpService"); local Api = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+                local Next = ""; local ServerList = {}
+                repeat
+                    local Raw = game:HttpGet(Api .. (Next ~= "" and "&cursor=" .. Next or "")); local Decoded = Http:JSONDecode(Raw)
+                    if Decoded and Decoded.data then
+                        for _, s in pairs(Decoded.data) do if s.playing < s.maxPlayers and s.id ~= game.JobId then table.insert(ServerList, s.id) end end
+                    end
+                    Next = Decoded.nextPageCursor or ""
+                until Next == "" or #ServerList >= 50
+                if #ServerList > 0 then TeleportService:TeleportToPlaceInstance(game.PlaceId, ServerList[math.random(1, #ServerList)], LocalPlayer) end
+            end)
+        end,
+    })
+    MainTab:CreateButton({
+        Name = "🔁 Tham Gia Lại Server (Rejoin Server)",
+        Callback = function()
+            pcall(function() if #Players:GetPlayers() <= 1 then TeleportService:Teleport(game.PlaceId, LocalPlayer) else TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer) end end)
+        end,
+    })
+    MainTab:CreateToggle({ Name = "Bật Tự Động Click Siêu Tốc (Auto Click 0ms)", CurrentValue = false, Callback = function(v) _G.Features.AutoClick = v end })
+    MainTab:CreateToggle({ Name = "Bật Chống Treo Máy (Anti-AFK 24/7)", CurrentValue = false, Callback = function(v) _G.Features.AntiAFK = v end })
+    MainTab:CreateToggle({ Name = "Bật Tự Động Tấn Công (Auto Attack)", CurrentValue = false, Callback = function(v) _G.Features.AutoAttack = v end })
+
+    -- TAB 2: PVP (CẬP NHẬT INF JUMP, NOCLIP, SPIN, TRANSPARENCY, HITBOX COLOR)
+    local PvpTab = Window:CreateTab("PvP", 7733917178)
+    PvpTab:CreateLabel("🎯 [GIỮ CHUỘT PHẢI ĐỂ KHÓA CHẶT MỤC TIÊU]")
+    
+    -- Các nút mới được thêm vào mục PvP theo yêu cầu của bạn:
+    PvpTab:CreateToggle({ Name = "🦘 Bật Infinite Jump (Nhảy vô hạn)", CurrentValue = false, Callback = function(v) _G.Features.InfiniteJump = v end })
+    PvpTab:CreateToggle({ Name = "🧱 Bật Noclip (Đi xuyên tường)", CurrentValue = false, Callback = function(v) _G.Features.Noclip = v end })
+    PvpTab:CreateToggle({ Name = "🌀 Bật Spin (Xoay nhân vật)", CurrentValue = false, Callback = function(v) _G.Features.SpinBot = v end })
+    PvpTab:CreateSlider({ Name = "⚙️ Tùy chỉnh tốc độ Spin", Range = {1, 200}, Increment = 5, CurrentValue = 50, Callback = function(v) _G.Features.SpinSpeed = v end })
+    
+    PvpTab:CreateDropdown({
+        Name = "🎨 Chọn màu Hitbox",
+        Options = {"Red", "Blue", "Green", "Yellow", "White", "Black", "Pink", "Cyan"},
+        CurrentOption = "Red",
+        MultipleOptions = false,
+        Callback = function(v)
+            local choice = v[1] or v
+            if choice == "Red" then _G.Features.HitboxColor = Color3.fromRGB(255, 0, 0)
+            elseif choice == "Blue" then _G.Features.HitboxColor = Color3.fromRGB(0, 0, 255)
+            elseif choice == "Green" then _G.Features.HitboxColor = Color3.fromRGB(0, 255, 0)
+            elseif choice == "Yellow" then _G.Features.HitboxColor = Color3.fromRGB(255, 255, 0)
+            elseif choice == "White" then _G.Features.HitboxColor = Color3.fromRGB(255, 255, 255)
+            elseif choice == "Black" then _G.Features.HitboxColor = Color3.fromRGB(0, 0, 0)
+            elseif choice == "Pink" then _G.Features.HitboxColor = Color3.fromRGB(255, 105, 180)
+            elseif choice == "Cyan" then _G.Features.HitboxColor = Color3.fromRGB(0, 255, 255) end
+        end
+    })
+    PvpTab:CreateSlider({ Name = "👻 Độ trong suốt Hitbox (Transparency)", Range = {0, 100}, Increment = 5, CurrentValue = 85, Callback = function(v) _G.Features.HitboxTransparency = (100 - v) / 100 end })
+    
+    -- Các tính năng PvP cũ giữ nguyên
+    PvpTab:CreateToggle({ Name = "Bật Ngắm Chuẩn (Aimbot Siêu Dính)", CurrentValue = false, Callback = function(v) _G.Features.Aimbot = v end })
+    PvpTab:CreateToggle({ Name = "Kiểm Tra Xuyên Tường (Wall Check)", CurrentValue = true, Callback = function(v) _G.Features.AimbotWallCheck = v end })
+    PvpTab:CreateDropdown({ Name = "Bộ Phận Muốn Khóa", Options = {"Head", "Torso"}, CurrentOption = "Head", MultipleOptions = false, Callback = function(v) _G.Features.AimbotTargetPart = v[1] or v end })
+    PvpTab:CreateToggle({ Name = "Hiện Vòng Tròn FOV Tâm Cố Định", CurrentValue = true, Callback = function(v) _G.Features.AimbotUseFOV = v end })
+    PvpTab:CreateSlider({ Name = "Kích Thước Vòng Tròn FOV Tâm", Range = {50, 600}, Increment = 25, CurrentValue = 150, Callback = function(v) _G.Features.AimbotFOVRadius = v end })
+    PvpTab:CreateToggle({ Name = "Lọc Đồng Đội (Team Check)", CurrentValue = false, Callback = function(v) _G.Features.AimbotTeamCheck = v end })
+    PvpTab:CreateToggle({ Name = "Bật Khối Hitbox Đỏ Tàng Hình", CurrentValue = false, Callback = function(v) _G.Features.Hitbox = v end })
+    PvpTab:CreateSlider({ Name = "Kích Cỡ Tầm Đánh (Hitbox Size)", Range = {2, 100}, Increment = 5, CurrentValue = 25, Callback = function(v) _G.Features.HitboxSize = v end })
+    PvpTab:CreateToggle({ Name = "Bật Khinh Công (Fly)", CurrentValue = false, Callback = function(v) _G.Features.Fly = v end })
+    PvpTab:CreateSlider({ Name = "Tốc Độ Bay (Fly Speed)", Range = {10, 300}, Increment = 10, CurrentValue = 50, Callback = function(v) _G.Features.FlySpeed = v end })
+
+    -- TAB 3: PLAYER
+    local PlayerTab = Window:CreateTab("Player", 4335489011)
+    local function GetPlayerNames() local l = {} for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(l, p.Name) end end return l end
+    local function GetSpectateNames() local l = {"[Dừng Quan Sát]"} for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(l, p.Name) end end return l end
+
+    local TeleportDropdown = PlayerTab:CreateDropdown({
+        Name = "Dịch Chuyển Đến Người Chơi (Teleport)", Options = GetPlayerNames(), CurrentOption = "", MultipleOptions = false,
+        Callback = function(v)
+            local tp = Players:FindFirstChild(v[1] or v)
+            if tp and tp.Character and tp.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = tp.Character.HumanoidRootPart.CFrame * CFrame.new(0, 2, 0)
+            end
+        end,
+    })
+
+    local SpectateDropdown = PlayerTab:CreateDropdown({
+        Name = "👁️ Quan Sát Người Chơi (Spectate Player)", Options = GetSpectateNames(), CurrentOption = "[Dừng Quan Sát]", MultipleOptions = false,
+        Callback = function(v)
+            local choice = v[1] or v
+            if choice == "[Dừng Quan Sát]" or choice == "" then Camera.CameraSubject = LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+            else local tp = Players:FindFirstChild(choice) if tp and tp.Character and tp.Character:FindFirstChildWhichIsA("Humanoid") then Camera.CameraSubject = tp.Character:FindFirstChildWhichIsA("Humanoid") end end
+        end,
+    })
+
+    local function refreshList() pcall(function() TeleportDropdown:Refresh(GetPlayerNames()); SpectateDropdown:Refresh(GetSpectateNames()) end) end
+    Players.PlayerAdded:Connect(refreshList); Players.PlayerRemoving:Connect(refreshList)
+
+    PlayerTab:CreateSlider({ Name = "Tốc Độ Chạy (WalkSpeed)", Range = {16, 500}, Increment = 5, CurrentValue = 16, Callback = function(v) _G.Features.WalkSpeed = v end })
+    PlayerTab:CreateSlider({ Name = "Lực Nhảy Cao (JumpPower)", Range = {50, 500}, Increment = 5, CurrentValue = 50, Callback = function(v) _G.Features.JumpPower = v end })
+    PlayerTab:CreateLabel("👑 GIAO DIỆN ĐỊNH VỊ LUXURY (ANTI-LAG) 👑")
+    PlayerTab:CreateToggle({ Name = "Khung Bo Góc Cao Cấp (Luxury Corner Box)", CurrentValue = false, Callback = function(v) _G.Features.ESP_2DBox = v end })
+    PlayerTab:CreateToggle({ Name = "Thanh Máu Động Biến Thiên (Health Bar)", CurrentValue = false, Callback = function(v) _G.Features.ESP_Health = v end })
+    PlayerTab:CreateToggle({ Name = "Hiện Tên & Khoảng Cách Địch (Radar Text)", CurrentValue = false, Callback = function(v) _G.Features.ESP_Name = v end })
+    PlayerTab:CreateToggle({ Name = "Đường Chỉ Hướng Tối Giản (Tracer Line)", CurrentValue = false, Callback = function(v) _G.Features.ESP_Line = v end })
+
+    -- TAB 4: VISUAL
+    local VisualTab = Window:CreateTab("Visual", 4370318685)
+    VisualTab:CreateSlider({ Name = "Tầm Nhìn Ống Kính (FOV)", Range = {70, 150}, Increment = 5, CurrentValue = 70, Callback = function(v) Camera.FieldOfView = v end })
+    VisualTab:CreateToggle({ Name = "Bật Lốc Xoáy Đẩy Văng Địch (Fling)", CurrentValue = false, Callback = function(v) _G.Features.Fling = v end })
+    VisualTab:CreateSlider({ Name = "Sức Mạnh Đẩy Văng (Fling Power)", Range = {1, 100000}, Increment = 1000, CurrentValue = 10000, Callback = function(v) _G.Features.FlingPower = v end })
+
+    -- TAB 5: CÀI ĐẶT
+    local SettingTab = Window:CreateTab("Cài đặt", 4384422544)
+    SettingTab:CreateLabel("🎨 CẤU HÌNH GIAO DIỆN MÀU SẮC SIÊU ĐẸP")
+    SettingTab:CreateToggle({ Name = "📈 Hiển Thị Bộ Đếm FPS (FPS Counter)", CurrentValue = false, Callback = function(v) _G.Features.FPSCounter = v end })
+    SettingTab:CreateToggle({ Name = "Bật Hiệu Ứng 7 Sắc Cầu Vồng (Chroma RGB)", CurrentValue = false, Callback = function(v) _G.Features.RGBTheme = v end })
+
+    SettingTab:CreateDropdown({
+        Name = "Thay Đổi Tông Màu Chủ Đạo Giao Diện",
+        Options = {"Mặc định (Xanh Cyan)", "Đỏ Hủy Diệt (Ruby)", "Tím Huyền Ảo (Neon)", "Hồng Cá Tính (HotPink)", "Vàng Hoàng Gia (Gold)", "Xanh Lá Cây (Lime)"}, CurrentOption = "Mặc định (Xanh Cyan)", MultipleOptions = false,
+        Callback = function(v)
+            local choice = v[1] or v
+            if choice == "Mặc định (Xanh Cyan)" then _G.Features.SelectedThemeColor = Color3.fromRGB(0, 255, 230)
+            elseif choice == "Đỏ Hủy Diệt (Ruby)" then _G.Features.SelectedThemeColor = Color3.fromRGB(255, 30, 30)
+            elseif choice == "Tím Huyền Ảo (Neon)" then _G.Features.SelectedThemeColor = Color3.fromRGB(180, 30, 255)
+            elseif choice == "Hồng Cá Tính (HotPink)" then _G.Features.SelectedThemeColor = Color3.fromRGB(255, 105, 180)
+            elseif choice == "Vàng Hoàng Gia (Gold)" then _G.Features.SelectedThemeColor = Color3.fromRGB(255, 215, 0)
+            elseif choice == "Xanh Lá Cây (Lime)" then _G.Features.SelectedThemeColor = Color3.fromRGB(50, 255, 50) end
+        end,
+    })
+
+    SettingTab:CreateLabel("🚀 HỆ THỐNG TỐI ƯU HÓA ENGINE GAME")
+    SettingTab:CreateToggle({
+        Name = "Bật Siêu Cấp Mượt Mà (Anti-Lag Cực Hạn)", CurrentValue = false,
+        Callback = function(v)
+            _G.Features.AntiLag = v
+            if v then
+                pcall(function()
+                    Lighting.GlobalShadows = false; Lighting.FogEnd = 9e9; settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+                    for _, obj in pairs(workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("UnionOperation") then
+                            if not OriginalGraphics[obj] then OriginalGraphics[obj] = { Material = obj.Material, Reflectance = obj.Reflectance } end
+                            obj.Material = Enum.Material.SmoothPlastic; obj.Reflectance = 0
+                        elseif obj:IsA("Decal") or obj:IsA("Texture") then if not OriginalGraphics[obj] then OriginalGraphics[obj] = { Visible = obj.Visible } end obj.Visible = false
+                        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then if not OriginalGraphics[obj] then OriginalGraphics[obj] = { Enabled = obj.Enabled } end obj.Enabled = false end
+                    end
+                end)
+            else
+                pcall(function()
+                    Lighting.GlobalShadows = true; settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+                    for obj, data in pairs(OriginalGraphics) do if obj and obj.Parent then if data.Material then obj.Material = data.Material end; if data.Reflectance then obj.Reflectance = data.Reflectance end; if data.Visible ~= nil then obj.Visible = data.Visible end; if data.Enabled ~= nil then obj.Enabled = data.Enabled end end end
+                    table.clear(OriginalGraphics)
+                end)
+            end
+        end,
+    })
+
+    SettingTab:CreateButton({
+        Name = "⚠️ Reset Key Đã Lưu (Đóng băng đồng hồ)",
+        Callback = function()
+            local keyData = LocalDatabase[CurrentActiveKey]
+            if keyData then
+                local remaining = keyData.expires - os.time()
+                if remaining > 0 then
+                    keyData.duration = remaining
+                    keyData.isFrozen = true
+                    keyData.expires = 0
+                end
+                save_global_db()
+            end
+            if isfile and isfile(KEY_FILE) then pcall(delfile, KEY_FILE) end
+            Rayfield:Notify({Name = "Thông Báo", Content = "Đã reset và đóng băng đồng hồ! Game sẽ đóng ngay.", Duration = 3})
+            task.wait(1.5)
+            game:Shutdown()
+        end,
+    })
+end
+
+-- THUẬT TOÁN ÉP MÀU TĨNH VÀ MÀU 7 SẮC CẦU VỒNG (CHROMA RGB) SIÊU MƯỢT
+task.spawn(function()
+    while task.wait(0.01) do
+        pcall(function()
+            local TargetColor = _G.Features.SelectedThemeColor
+            if _G.Features.RGBTheme then TargetColor = Color3.fromHSV((tick() % 4) / 4, 1, 1) end
+            if game:GetService("CoreGui"):FindFirstChild("Rayfield") then
+                for _, element in pairs(game:GetService("CoreGui").Rayfield:GetDescendants()) do
+                    if element:IsA("Frame") and (element.Name == "Line" or element.Name == "Stroke" or element.Name == "Selected") then element.BackgroundColor3 = TargetColor
+                    elseif element:IsA("UIStroke") then element.Color = TargetColor
+                    elseif element:IsA("TextLabel") and (element.TextColor3 == Color3.fromRGB(0, 255, 230) or element.Name == "Title" or element.Name == "WindowTab") then element.TextColor3 = TargetColor
+                    elseif element:IsA("ImageLabel") and element.ImageColor3 == Color3.fromRGB(0, 255, 230) then element.ImageColor3 = TargetColor end
+                end
+            end
+        end)
+    end
+end)
+
+game:GetService("Players").PlayerRemoving:Connect(function(player)
+    if player == LocalPlayer and CurrentActiveKey ~= "" then
+        local keyData = LocalDatabase[CurrentActiveKey]
+        if keyData and not keyData.isFrozen then
+            keyData.duration = keyData.expires - os.time()
+            save_global_db()
+        end
+    end
+end)
+
+-- =============================================================================
+-- [8. HỆ THỐNG UI NHẬP KEY: ĐẦY ĐỦ NÚT GET KEY & LƯU ĐỒNG HỒ ĐẾM NGƯỢC]
+-- =============================================================================
+local function auto_login()
+    if isfile and isfile(KEY_FILE) then
+        local success, saved_key = pcall(readfile, KEY_FILE)
+        if success and LocalDatabase[saved_key] then
+            local keyData = LocalDatabase[saved_key]
+            if keyData.hwid == getHWID() then
+                if keyData.isFrozen then
+                    keyData.expires = os.time() + keyData.duration
+                    keyData.isFrozen = false
+                    save_global_db()
+                end
+                if (keyData.expires - os.time()) > 0 then
+                    CurrentActiveKey = saved_key
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+if auto_login() then
+    LaunchMainMenu(get_key_remaining_time())
+else
+    local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
+    local MainFrame = Instance.new("Frame", ScreenGui)
+    MainFrame.Size = UDim2.new(0, 400, 0, 270); MainFrame.Position = UDim2.new(0.5, -200, 0.5, -135); MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+    local Title = Instance.new("TextLabel", MainFrame)
+    Title.Size = UDim2.new(1, 0, 0, 50); Title.Text = "HỆ THỐNG XÁC THỰC 10 KEY HỆ THỐNG"; Title.TextColor3 = Color3.fromRGB(255, 255, 255); Title.TextSize = 15; Title.Font = Enum.Font.SourceSansBold; Title.BackgroundTransparency = 1
+
+    local TextBox = Instance.new("TextBox", MainFrame)
+    TextBox.Size = UDim2.new(0, 300, 0, 40); TextBox.Position = UDim2.new(0.5, -150, 0.35, -10); TextBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30); TextBox.TextColor3 = Color3.fromRGB(255, 255, 255); TextBox.PlaceholderText = "Nhập mã key hệ thống cấp của bạn..."; TextBox.Text = ""; Instance.new("UICorner", TextBox)
+
+    local SubmitBtn = Instance.new("TextButton", MainFrame)
+    SubmitBtn.Size = UDim2.new(0, 300, 0, 40); SubmitBtn.Position = UDim2.new(0.5, -150, 0.58, 10); SubmitBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0); SubmitBtn.Text = "KÍCH HOẠT SCRIPT"; SubmitBtn.TextColor3 = Color3.fromRGB(255, 255, 255); SubmitBtn.Font = Enum.Font.SourceSansBold; Instance.new("UICorner", SubmitBtn)
+
+    local GetKeyBtn = Instance.new("TextButton", MainFrame)
+    GetKeyBtn.Size = UDim2.new(0, 300, 0, 40); GetKeyBtn.Position = UDim2.new(0.5, -150, 0.78, 10); GetKeyBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255); GetKeyBtn.Text = "GET KEY"; GetKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255); GetKeyBtn.Font = Enum.Font.SourceSansBold; Instance.new("UICorner", GetKeyBtn)
+
+    GetKeyBtn.MouseButton1Click:Connect(function()
+        local url = "https://fnote.me/edit/29sXyN?t=true"
+        if setclipboard then setclipboard(url); GetKeyBtn.Text = "ĐÃ COPY LINK VÀO CLIPBOARD!"; task.wait(2); GetKeyBtn.Text = "GET KEY" end
+        if request then pcall(function() request({Url = url, Method = "GET"}) end) end
+    end)
+
+    SubmitBtn.MouseButton1Click:Connect(function()
+        local inputKey = TextBox.Text
+        local keyData = LocalDatabase[inputKey]
+        local myHWID = getHWID()
+
+        if keyData then
+            if keyData.hwid ~= nil and keyData.hwid ~= myHWID then
+                Title.Text = "LỖI: KEY ĐÃ BỊ KHÓA BỞI THIẾT BỊ KHÁC!"; Title.TextColor3 = Color3.fromRGB(255, 0, 0)
+                return
+            end
+
+            if not keyData.isFrozen and keyData.expires > 0 and keyData.expires <= os.time() then
+                Title.Text = "LỖI: KEY ĐÃ HẾT HẠN VÀ ĐÃ BỊ HỦY BỎ!"; Title.TextColor3 = Color3.fromRGB(255, 0, 0)
+                return
+            end
+
+            if keyData.hwid == nil then keyData.hwid = myHWID end
+            if keyData.isFrozen or keyData.expires == 0 then
+                keyData.expires = os.time() + keyData.duration
+                keyData.isFrozen = false
+            end
+
+            CurrentActiveKey = inputKey
+            save_global_db()
+
+            TextBox:Destroy(); SubmitBtn:Destroy(); GetKeyBtn:Destroy()
+            local ProgressLabel = Instance.new("TextLabel", MainFrame)
+            ProgressLabel.Size = UDim2.new(1, 0, 0, 30); ProgressLabel.Position = UDim2.new(0, 0, 0.4, 0); ProgressLabel.TextColor3 = Color3.fromRGB(255, 255, 255); ProgressLabel.TextSize = 20; ProgressLabel.Font = Enum.Font.SourceSansBold; ProgressLabel.BackgroundTransparency = 1
+            local BarBg = Instance.new("Frame", MainFrame); BarBg.Size = UDim2.new(0, 300, 0, 6); BarBg.Position = UDim2.new(0.5, -150, 0.6, 10); BarBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            local Bar = Instance.new("Frame", BarBg); Bar.Size = UDim2.new(0, 0, 1, 0); Bar.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+
+            for i = 1, 100 do
+                ProgressLabel.Text = "Đang đồng bộ cấu hình màu sắc... " .. i .. "%"
+                Bar.Size = UDim2.new(i/100, 0, 1, 0); task.wait(0.01)
+            end
+
+            if writefile then pcall(writefile, KEY_FILE, inputKey) end
+            ScreenGui:Destroy()
+            LaunchMainMenu(get_key_remaining_time())
+        else
+            Title.Text = "SAI KEY! MÃ KHÔNG TỒN TẠI"
+            Title.TextColor3 = Color3.fromRGB(255, 0, 0)
+        end
+    end)
+end
 
