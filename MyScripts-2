@@ -24,7 +24,7 @@ local LocalDatabase = {
     ["RAYFIELD-KEY-07"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
     ["RAYFIELD-KEY-08"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
     ["RAYFIELD-KEY-09"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false },
-    ["RAYFIELD-KEY-10"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false }
+    ["NHTK-DZV-1DAY"] = { duration = 86400, expires = 0, hwid = nil, isFrozen = false }
 }
 
 local CurrentActiveKey = ""
@@ -741,12 +741,12 @@ else
 
         if keyData then
             if keyData.hwid ~= nil and keyData.hwid ~= myHWID then
-                Title.Text = "LỖI: KEY ĐÃ BỊ KHÓA BỞI THIẾT BỊ KHÁC!"; Title.TextColor3 = Color3.fromRGB(255, 0, 0)
+                Title.Text = "LỖI: KEY ĐÃ FULL THIẾT BỊ!"; Title.TextColor3 = Color3.fromRGB(255, 0, 0)
                 return
             end
 
             if not keyData.isFrozen and keyData.expires > 0 and keyData.expires <= os.time() then
-                Title.Text = "LỖI: KEY ĐÃ HẾT HẠN VÀ ĐÃ BỊ HỦY BỎ!"; Title.TextColor3 = Color3.fromRGB(255, 0, 0)
+                Title.Text = "LỖI: KEY ĐÃ HẾT HẠN!"; Title.TextColor3 = Color3.fromRGB(255, 0, 0)
                 return
             end
 
